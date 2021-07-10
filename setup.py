@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 
 import yowsup_config
 
-deps = ['consonance==0.1.3-1', 'argparse', 'python-axolotl==0.2.2', 'six==1.10', 'appdirs', 'protobuf>=3.6.0']
+deps = ['argparse']
 
 setup(
     name='yowsup-config-extracter',
@@ -18,11 +18,11 @@ setup(
     scripts=['yowsup-config-extract'],
     # cmdclass={'test': PyTest},
     author_email='jiankaihu.jrsen@gmail.com',
-    description='The WhatsApp tool lib',
+    description='The WhatsApp config extract tool lib',
     # long_description=long_description,
     packages=find_packages(),
     include_package_data=True,
-    data_files=[('yowsup_config/common', ['yowsup_config/common/mcc-mnc-table.json'])],
+    # data_files=[('yowsup_config/common', ['yowsup_config/common/mcc-mnc-table.json'])],
     platforms='any',
     # test_suite='',
     classifiers=[

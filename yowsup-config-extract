@@ -1,0 +1,21 @@
+import argparse
+
+from yowsup_config import extracter
+from yowsup_config.extracter import Extracter
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='yowsup-config-extract', description='Extract config from rooted android device for yowsup project.')
+    parser.add_argument('-s', '--serial', help='specific device serial')
+    parser.add_argument('-b', '--business', action='store_true', help='for whatsapp business version')
+    parser.add_argument('--out', type=str, required=True, help='specific save directory')
+    args = parser.parse_args()
+    if args.out:
+        package = extracter.WHATSAPP_BUSINESS if args.business else extracter.WHATSAPP_PERSONAL
+        Extracter(args.serial, package).extractFromDevice(args.out)
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()

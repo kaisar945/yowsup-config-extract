@@ -11,6 +11,8 @@ from .adb_wrapper import _AdbWrapper
 
 DEVICE_AXOLOTLDB_EXTRACT_PATH = '/data/local/tmp/axolotl/'
 SOMETOKEN = 'A\u0004\u001d@\u0011\u0018V\u0002T(3{;ES'
+WHATSAPP_PERSONAL = 'com.whatsapp'
+WHATSAPP_BUSINESS = 'com.whatsapp.w4b'
 
 
 class NoRootException(Exception):
@@ -27,8 +29,9 @@ class KeyPairInvalideException(Exception):
 
 class Extracter():
 
-    def __init__(self, device_serial=None):
+    def __init__(self, device_serial=None, package=WHATSAPP_PERSONAL):
         self.device = _AdbWrapper(device_serial)
+        self.package = package
 
     def extractFromDevice(self, dirpath: str):
         # check root supported
@@ -36,7 +39,7 @@ class Extracter():
         if uid != 0:
             raise NoRootException('Only support rooted device!')
         # check whatsapp installed
-        app_installed = bool(self.device.shell('pm path com.whatsapp &>/dev/null && printf 1 || printf 0'))
+        app_installed = bool(self.device.shell(f'pm path {self.package} &>/dev/null && printf 1 || printf 0'))
         if not app_installed:
             raise AppNotFoundException('Please install WhatsApp and register first')
         # extract prefs file
@@ -46,11 +49,11 @@ class Extracter():
 
     def extractSharedPreference(self, dirpath: str):
         # parse keystore.xml
-        keystore = self.__parsePrefs('/data/data/com.whatsapp/shared_prefs/keystore.xml')
+        keystore = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/keystore.xml')
         client_static_keypair = keystore.get('client_static_keypair', self.__decryptKeyPairJavaImpl(keystore['client_static_keypair_pwd_enc']))
         server_static_public = self.__b64padding(keystore.get('server_static_public'))
         # parse com.whatsapp_preferences_light.xml
-        prefs = self.__parsePrefs('/data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml')
+        prefs = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/{self.package}_preferences_light.xml')
         phone = prefs.get('registration_jid')
         cc = prefs.get('cc')
         carrier = self.__pickCarrier(cc)
@@ -86,7 +89,7 @@ class Extracter():
 
     def extractAxolotlDatabase(self, dirpath: str):
         self.device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
-        ok = bool(self.device.shell(f'su 0 cp /data/data/com.whatsapp/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
+        ok = bool(self.device.shell(f'su 0 cp /data/data/{self.package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
         if not ok:
             raise Exception('extract axolotl.db fail, please report issue')
         filepaths = self.device.shell(f'ls -1 {DEVICE_AXOLOTLDB_EXTRACT_PATH}/*')
