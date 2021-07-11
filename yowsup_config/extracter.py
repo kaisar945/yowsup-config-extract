@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import shlex
+from enum import Enum
 from hashlib import pbkdf2_hmac
 from typing import Dict
 from xml.etree import ElementTree
@@ -27,16 +28,23 @@ class KeyPairInvalideException(Exception):
     pass
 
 
+class SuType(Enum):
+    NONE = 0
+    AOSP = 1
+    THIRD = 2
+
+
 class Extracter():
 
     def __init__(self, device_serial=None, package=WHATSAPP_PERSONAL):
         self.device = _AdbWrapper(device_serial)
         self.package = package
+        self.su_type = SuType.NONE
 
     def extractFromDevice(self, dirpath: str):
         # check root supported
-        uid = int(self.device.shell('su 0 id -u 2>/dev/null || id -u'))
-        if uid != 0:
+        self.su_type = SuType[self.device.shell('su 0 -c printf THIRD 2>/dev/null || su 0 printf AOSP 2>/dev/null || printf NONE')]
+        if self.su_type == SuType.NONE:
             raise NoRootException('Only support rooted device!')
         # check whatsapp installed
         app_installed = bool(self.device.shell(f'pm path {self.package} &>/dev/null && printf 1 || printf 0'))
@@ -64,7 +72,7 @@ class Extracter():
         edge_routing_info = self.__b64padding(prefs.get('routing_info'))
         expid = prefs.get('phoneid_id')
         fdid = prefs.get('perf_device_id')
-        id = base64.encodestring(fdid[0:20].encode('utf-8')).decode('utf-8')
+        id = base64.b64encode(fdid[0:20].encode('utf-8')).decode('utf-8')
 
         config = {
             '__version__': 1,
@@ -89,9 +97,10 @@ class Extracter():
 
     def extractAxolotlDatabase(self, dirpath: str):
         self.device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
-        ok = bool(self.device.shell(f'su 0 cp /data/data/{self.package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
+        ok = bool(self.__runAsRootOnDevice(f'cp /data/data/{self.package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
         if not ok:
             raise Exception('extract axolotl.db fail, please report issue')
+        self.__runAsRootOnDevice(f'chown 2000:2000 -R {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
         filepaths = self.device.shell(f'ls -1 {DEVICE_AXOLOTLDB_EXTRACT_PATH}/*')
         for filepath in filepaths.splitlines():
             self.device.pull(filepath, dirpath)
@@ -133,9 +142,17 @@ class Extracter():
                     return carrier
 
     def __parsePrefs(self, device_prefs_file: str) -> Dict[str, str]:
-        xml = self.device.shell(f'su 0 cat {device_prefs_file}')
+        xml = self.__runAsRootOnDevice(f'cat {device_prefs_file}')
         root = ElementTree.fromstring(xml)
         return {child.attrib['name']: child.text for child in root}
+
+    def __runAsRootOnDevice(self, command):
+        if self.su_type == SuType.THIRD:
+            return self.device.shell(f'su 0 -c {command}')
+        elif self.su_type == SuType.AOSP:
+            return self.device.shell(f'su 0 {command}')
+        else:
+            raise NoRootException('Only support rooted device!')
 
     def __b64padding(self, text: str):
         return text + '=' * (-len(text) % 4)
