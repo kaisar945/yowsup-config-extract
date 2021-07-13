@@ -45,7 +45,7 @@ class Extracter():
     def setLogLevel(self, level):
         logger.setLevel(level)
 
-    def extractFromDevice(self, dirpath: str):
+    def extractFromDevice(self, dirpath: str) -> str:
         # check root supported
         logger.info('check root supported')
         su_check_cmd = f'([ $(id -u) -eq 0 ] && printf {SuType.AOSP.name}) || su 0 -c printf {SuType.THIRD.name} 2>/dev/null || su 0 printf {SuType.AOSP.name} 2>/dev/null || printf {SuType.NONE.name}'
@@ -64,15 +64,17 @@ class Extracter():
         logger.info(f'check {self.package} installed pass')
         # extract prefs file
         logger.info('extract config file')
-        config_dirpath = self.extractSharedPreference(dirpath)
+        config_dirpath = self.__extractSharedPreference(dirpath)
         logger.info('extract config file done')
         # extract db file
         logger.info('extract axolotl db file')
-        self.extractAxolotlDatabase(config_dirpath)
+        self.__extractAxolotlDatabase(config_dirpath)
         logger.info('extract axolotl db file done')
+        logger.info(f'save to {config_dirpath}')
         logger.info('Done')
+        return config_dirpath
 
-    def extractSharedPreference(self, dirpath: str):
+    def __extractSharedPreference(self, dirpath: str):
         # parse keystore.xml
         keystore = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/keystore.xml')
         client_static_keypair = keystore.get('client_static_keypair', self.__decryptKeyPairJavaImpl(keystore['client_static_keypair_pwd_enc']))
@@ -111,7 +113,7 @@ class Extracter():
         logger.debug("======config.json======")
         logger.debug('\n' + json.dumps(config, indent=4))
         config_dirpath = os.path.join(dirpath, phone)
-        shutil.rmtree(config_dirpath)
+        shutil.rmtree(config_dirpath, ignore_errors=True)
         os.makedirs(config_dirpath, exist_ok=False)
         filepath = os.path.join(config_dirpath, 'config.json')
         with open(filepath, 'w') as f:
@@ -119,7 +121,7 @@ class Extracter():
             f.flush()
         return config_dirpath
 
-    def extractAxolotlDatabase(self, dirpath: str):
+    def __extractAxolotlDatabase(self, dirpath: str):
         self.device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
         ok = bool(self.__runAsRootOnDevice(f'cp /data/data/{self.package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
         if not ok:
