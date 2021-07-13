@@ -47,7 +47,8 @@ class Extracter():
     def extractFromDevice(self, dirpath: str):
         # check root supported
         logger.info('check root supported')
-        self.su_type = SuType[self.device.shell('([ $(id -u) -eq 0 ] && printf AOSP) || su 0 -c printf THIRD 2>/dev/null || su 0 printf AOSP 2>/dev/null || printf NONE')]
+        su_check_cmd = f'([ $(id -u) -eq 0 ] && printf {SuType.AOSP.name}) || su 0 -c printf {SuType.THIRD.name} 2>/dev/null || su 0 printf {SuType.AOSP.name} 2>/dev/null || printf {SuType.NONE.name}'
+        self.su_type = SuType[self.device.shell(su_check_cmd)]
         if self.su_type == SuType.NONE:
             logger.error('Only support rooted device!')
             raise NoRootException('Only support rooted device!')
@@ -172,7 +173,10 @@ class Extracter():
         if self.su_type == SuType.THIRD:
             return self.device.shell(f'su 0 -c {command}')
         elif self.su_type == SuType.AOSP:
-            return self.device.shell(f'su 0 {command}')
+            if int(self.device.shell('id -u')) == 0:
+                return self.device.shell(command)
+            else:
+                return self.device.shell(f'su 0 {command}')
         else:
             raise NoRootException('Only support rooted device!')
 
