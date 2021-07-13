@@ -1,19 +1,19 @@
-
 import base64
 import json
 import os
+import random
 import shlex
 from enum import Enum
 from hashlib import pbkdf2_hmac
 from typing import Dict
 from xml.etree import ElementTree
 
+from yowsup_config import logger
+
 from .adb_wrapper import _AdbWrapper
 
 DEVICE_AXOLOTLDB_EXTRACT_PATH = '/data/local/tmp/axolotl/'
 SOMETOKEN = 'A\u0004\u001d@\u0011\u0018V\u0002T(3{;ES'
-WHATSAPP_PERSONAL = 'com.whatsapp'
-WHATSAPP_BUSINESS = 'com.whatsapp.w4b'
 
 
 class NoRootException(Exception):
@@ -36,39 +36,56 @@ class SuType(Enum):
 
 class Extracter():
 
-    def __init__(self, device_serial=None, package=WHATSAPP_PERSONAL):
+    def __init__(self, device_serial=None, package='com.whatsapp'):
         self.device = _AdbWrapper(device_serial)
         self.package = package
         self.su_type = SuType.NONE
 
+    def setLogLevel(self, level):
+        logger.setLevel(level)
+
     def extractFromDevice(self, dirpath: str):
         # check root supported
-        self.su_type = SuType[self.device.shell('su 0 -c printf THIRD 2>/dev/null || su 0 printf AOSP 2>/dev/null || printf NONE')]
+        logger.info('check root supported')
+        self.su_type = SuType[self.device.shell('([ $(id -u) -eq 0 ] && printf AOSP) || su 0 -c printf THIRD 2>/dev/null || su 0 printf AOSP 2>/dev/null || printf NONE')]
         if self.su_type == SuType.NONE:
+            logger.error('Only support rooted device!')
             raise NoRootException('Only support rooted device!')
+        logger.debug(f'root type [{self.su_type.name}]')
+        logger.info('check root supported pass')
         # check whatsapp installed
+        logger.info(f'check {self.package} installed')
         app_installed = bool(self.device.shell(f'pm path {self.package} &>/dev/null && printf 1 || printf 0'))
         if not app_installed:
-            raise AppNotFoundException('Please install WhatsApp and register first')
+            logger.error(f'Please install {self.package} and register first')
+            raise AppNotFoundException(f'Please install {self.package} and register first')
+        logger.info(f'check {self.package} installed pass')
         # extract prefs file
+        logger.info('extract config file')
         self.extractSharedPreference(dirpath)
+        logger.info('extract config file done')
         # extract db file
+        logger.info('extract axolotl db file')
         self.extractAxolotlDatabase(dirpath)
+        logger.info('extract axolotl db file done')
+        logger.info('Done')
 
     def extractSharedPreference(self, dirpath: str):
         # parse keystore.xml
         keystore = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/keystore.xml')
         client_static_keypair = keystore.get('client_static_keypair', self.__decryptKeyPairJavaImpl(keystore['client_static_keypair_pwd_enc']))
+        logger.debug('client_static_keypair=' + client_static_keypair)
         server_static_public = self.__b64padding(keystore.get('server_static_public'))
+        logger.debug('server_static_public=' + server_static_public)
         # parse com.whatsapp_preferences_light.xml
         prefs = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/{self.package}_preferences_light.xml')
         phone = prefs.get('registration_jid')
         cc = prefs.get('cc')
-        carrier = self.__pickCarrier(cc)
+        carrier = self.__choiceCarrier(cc)
         mcc = carrier['mcc']
         mnc = carrier['mnc']
-        sim_mcc = mcc
-        sim_mnc = mnc
+        sim_mcc = carrier['mcc']
+        sim_mnc = carrier['mnc']
         edge_routing_info = self.__b64padding(prefs.get('routing_info'))
         expid = prefs.get('phoneid_id')
         fdid = prefs.get('perf_device_id')
@@ -89,7 +106,8 @@ class Extracter():
             'sim_mcc': sim_mcc,
             'sim_mnc': sim_mnc
         }
-
+        logger.debug("======config.json======")
+        logger.debug('\n' + json.dumps(config, indent=4))
         filepath = os.path.join(dirpath, 'config.json')
         with open(filepath, 'w') as f:
             f.write(json.dumps(config, indent=4))
@@ -99,7 +117,7 @@ class Extracter():
         self.device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
         ok = bool(self.__runAsRootOnDevice(f'cp /data/data/{self.package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
         if not ok:
-            raise Exception('extract axolotl.db fail, please report issue')
+            raise Exception('extract axolotl.db failure, please report issue')
         self.__runAsRootOnDevice(f'chown 2000:2000 -R {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
         filepaths = self.device.shell(f'ls -1 {DEVICE_AXOLOTLDB_EXTRACT_PATH}/*')
         for filepath in filepaths.splitlines():
@@ -133,16 +151,20 @@ class Extracter():
         keypair_enc = keypair_enc.replace('"', '\\"')
         return self.device.shell(f'echo {shlex.quote(keypair_enc)} | CLASSPATH={device_filename} app_process /system/bin  com.kaisar.wakeypairtools.Decrypt').strip()
 
-    def __pickCarrier(self, country_code: str):
+    def __choiceCarrier(self, country_code: str):
         dirpath = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(dirpath, 'common', 'mcc-mnc-table.json')) as f:
             carriers = json.load(f)
+            matched_carriers = []
             for carrier in carriers:
                 if country_code == carrier['country_code']:
-                    return carrier
+                    matched_carriers.append(carrier)
+            return random.choice(matched_carriers)
 
     def __parsePrefs(self, device_prefs_file: str) -> Dict[str, str]:
         xml = self.__runAsRootOnDevice(f'cat {device_prefs_file}')
+        logger.debug(f'======{device_prefs_file}======')
+        logger.debug('\n' + xml)
         root = ElementTree.fromstring(xml)
         return {child.attrib['name']: child.text for child in root}
 

@@ -22,7 +22,7 @@ setup(
     # long_description=long_description,
     packages=find_packages(),
     include_package_data=True,
-    # data_files=[('yowsup_config/common', ['yowsup_config/common/mcc-mnc-table.json'])],
+    data_files=[('yowsup_config/common', ['yowsup_config/common/mcc-mnc-table.json', 'yowsup_config/common/decrypt.dex'])],
     platforms='any',
     # test_suite='',
     classifiers=[

@@ -1,18 +1,24 @@
-import argparse
+#!/usr/bin/env python3
+__version__ = "1.0.0"
+__author__ = "Kaisar Zu"
 
-from yowsup_config import extracter
+import argparse
+import logging
+
 from yowsup_config.extracter import Extracter
 
 
 def main():
     parser = argparse.ArgumentParser(prog='yowsup-config-extract', description='Extract config from rooted android device for yowsup project.')
-    parser.add_argument('-s', '--serial', help='specific device serial')
-    parser.add_argument('-b', '--business', action='store_true', help='for whatsapp business version')
-    parser.add_argument('--out', type=str, required=True, help='specific save directory')
+    parser.add_argument('-s', '--serial', help='Specific device serial')
+    parser.add_argument('-p', '--package', default='com.whatsapp', help='For mod package default:com.whatsapp')
+    parser.add_argument('--out', type=str, required=True, help='Specific save directory')
+    parser.add_argument('-d', '--debug', action="store_true", help='Show debug log')
     args = parser.parse_args()
     if args.out:
-        package = extracter.WHATSAPP_BUSINESS if args.business else extracter.WHATSAPP_PERSONAL
-        Extracter(args.serial, package).extractFromDevice(args.out)
+        extracter = Extracter(args.serial, args.package)
+        extracter.setLogLevel(logging.DEBUG if args.debug else logging.INFO)
+        extracter.extractFromDevice(args.out)
     else:
         parser.print_help()
 

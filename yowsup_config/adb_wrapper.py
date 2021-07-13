@@ -7,11 +7,12 @@ class _AdbWrapper():
 
     def __init__(self, serial: str = None):
         self.serial = serial
-        if os.system('adb shell exec') != 0:
+        self.cmdopts = f'-s {serial}' if serial else ''
+        if os.system(f'adb {self.cmdopts} shell exec') != 0:
             raise Exception('Install adb in the system env PATH first')
 
     def __execute(self, subcmd):
-        command = f'adb -s {self.serial} {subcmd}' if self.serial else f'adb {subcmd}'
+        command = f'adb {self.cmdopts} {subcmd}'
         process = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         stdout, _ = process.communicate()
         output = stdout.decode('utf-8')
