@@ -3,6 +3,7 @@ import json
 import os
 import random
 import shlex
+import shutil
 from enum import Enum
 from hashlib import pbkdf2_hmac
 from typing import Dict
@@ -63,11 +64,11 @@ class Extracter():
         logger.info(f'check {self.package} installed pass')
         # extract prefs file
         logger.info('extract config file')
-        self.extractSharedPreference(dirpath)
+        config_dirpath = self.extractSharedPreference(dirpath)
         logger.info('extract config file done')
         # extract db file
         logger.info('extract axolotl db file')
-        self.extractAxolotlDatabase(dirpath)
+        self.extractAxolotlDatabase(config_dirpath)
         logger.info('extract axolotl db file done')
         logger.info('Done')
 
@@ -109,10 +110,14 @@ class Extracter():
         }
         logger.debug("======config.json======")
         logger.debug('\n' + json.dumps(config, indent=4))
-        filepath = os.path.join(dirpath, 'config.json')
+        config_dirpath = os.path.join(dirpath, phone)
+        shutil.rmtree(config_dirpath)
+        os.makedirs(config_dirpath, exist_ok=False)
+        filepath = os.path.join(config_dirpath, 'config.json')
         with open(filepath, 'w') as f:
             f.write(json.dumps(config, indent=4))
             f.flush()
+        return config_dirpath
 
     def extractAxolotlDatabase(self, dirpath: str):
         self.device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
