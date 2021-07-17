@@ -4,85 +4,100 @@ import os
 import random
 import shlex
 import shutil
-from enum import Enum
+import tempfile
 from hashlib import pbkdf2_hmac
 from typing import Dict
 from xml.etree import ElementTree
 
 from yowsup_config import logger
 
-from .adb_wrapper import _AdbWrapper
+from .adb_wrapper import NoRootException, _AdbWrapper
 
 DEVICE_AXOLOTLDB_EXTRACT_PATH = '/data/local/tmp/axolotl/'
 SOMETOKEN = 'A\u0004\u001d@\u0011\u0018V\u0002T(3{;ES'
 
 
-class NoRootException(Exception):
+class AppNotInstalledException(Exception):
     pass
 
 
-class AppNotFoundException(Exception):
+class ExportConfigException(Exception):
     pass
 
 
-class KeyPairInvalideException(Exception):
+class KeyPairInvalideException(ExportConfigException):
     pass
 
 
-class SuType(Enum):
-    NONE = 0
-    AOSP = 1
-    THIRD = 2
+class ExportAxolotlException(Exception):
+    pass
 
 
 class Extracter():
 
-    def __init__(self, device_serial=None, package='com.whatsapp'):
-        self.device = _AdbWrapper(device_serial)
-        self.package = package
-        self.su_type = SuType.NONE
-
     def setLogLevel(self, level):
         logger.setLevel(level)
 
-    def extractFromDevice(self, dirpath: str) -> str:
+    def extractFromDevice(self, serial=None, package: str = 'com.whatsapp', dirpath: str = tempfile.gettempdir()) -> str:
+        device = _AdbWrapper(serial)
         # check root supported
-        logger.info('check root supported')
-        su_check_cmd = f'([ $(id -u) -eq 0 ] && printf {SuType.AOSP.name}) || su 0 -c printf {SuType.THIRD.name} 2>/dev/null || su 0 printf {SuType.AOSP.name} 2>/dev/null || printf {SuType.NONE.name}'
-        self.su_type = SuType[self.device.shell(su_check_cmd)]
-        if self.su_type == SuType.NONE:
-            logger.error('Only support rooted device!')
-            raise NoRootException('Only support rooted device!')
-        logger.debug(f'root type [{self.su_type.name}]')
-        logger.info('check root supported pass')
-        # check whatsapp installed
-        logger.info(f'check {self.package} installed')
-        app_installed = bool(self.device.shell(f'pm path {self.package} &>/dev/null && printf 1 || printf 0'))
+        logger.info('check root permission')
+        try:
+            rooted = device.shell_as_root('printf rooted')
+        except NoRootException as e:
+            logger.info('no root')
+            raise e
+        logger.info(rooted)
+        # check package installed
+        logger.info('check app installed')
+        app_installed = bool(int(device.shell(f'pm path {package} &>/dev/null && printf 1 || printf 0')))
         if not app_installed:
-            logger.error(f'Please install {self.package} and register first')
-            raise AppNotFoundException(f'Please install {self.package} and register first')
-        logger.info(f'check {self.package} installed pass')
+            logger.info('not installed')
+            raise AppNotInstalledException(f'{package} not installed')
+        logger.info(f'{package} installed')
         # extract prefs file
         logger.info('extract config file')
-        config_dirpath = self.__extractSharedPreference(dirpath)
-        logger.info('extract config file done')
+        config_dirpath = self.__extractSharedPreference(device, package, dirpath)
+        logger.info('done')
         # extract db file
         logger.info('extract axolotl db file')
-        self.__extractAxolotlDatabase(config_dirpath)
-        logger.info('extract axolotl db file done')
+        self.__extractAxolotlDatabase(device, package, config_dirpath)
+        logger.info('done')
         logger.info(f'save to {config_dirpath}')
-        logger.info('Done')
+        logger.info('Finish')
         return config_dirpath
 
-    def __extractSharedPreference(self, dirpath: str):
+    def __extractSharedPreference(self, device: _AdbWrapper, package: str, dirpath: str):
         # parse keystore.xml
-        keystore = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/keystore.xml')
-        client_static_keypair = keystore.get('client_static_keypair', self.__decryptKeyPairJavaImpl(keystore['client_static_keypair_pwd_enc']))
+        keystore_filepath = f'/data/data/{package}/shared_prefs/keystore.xml'
+        file_exists = bool(int(device.shell_as_root(f'[[ -f {keystore_filepath} ]] && printf 1 || printf 0')))
+        if not file_exists:
+            logger.info(f'{keystore_filepath} miss')
+            raise FileNotFoundError(f'not found {keystore_filepath} on device')
+        keystore = self.__parsePrefs(device, keystore_filepath)
+        client_static_keypair = keystore.get('client_static_keypair', '')
+        if not client_static_keypair:
+            client_static_keypair_encrypted = keystore.get('client_static_keypair_pwd_enc', '')
+            if not client_static_keypair_encrypted:
+                logger.info('client_static_keypair miss')
+                raise KeyPairInvalideException(f'client_static_keypair not found in {keystore_filepath}')
+            client_static_keypair = self.__decryptKeyPairJavaImpl(device, client_static_keypair_encrypted)
         logger.debug('client_static_keypair=' + client_static_keypair)
-        server_static_public = self.__b64padding(keystore.get('server_static_public'))
+
+        server_static_public = keystore.get('server_static_public', '')
+        if not server_static_public:
+            logger.info('server_static_public miss')
+            raise KeyPairInvalideException(f'server_static_public not found in {keystore_filepath}')
+        server_static_public = self.__b64padding(server_static_public)
         logger.debug('server_static_public=' + server_static_public)
+
         # parse com.whatsapp_preferences_light.xml
-        prefs = self.__parsePrefs(f'/data/data/{self.package}/shared_prefs/{self.package}_preferences_light.xml')
+        prefs_light_filepath = f'/data/data/{package}/shared_prefs/{package}_preferences_light.xml'
+        file_exists = bool(int(device.shell_as_root(f'[[ -f {prefs_light_filepath} ]] && printf 1 || printf 0 ')))
+        if not file_exists:
+            logger.info(f'{prefs_light_filepath} miss')
+            raise FileNotFoundError(f'not found {prefs_light_filepath} on device')
+        prefs = self.__parsePrefs(device, prefs_light_filepath)
         phone = prefs.get('registration_jid')
         cc = prefs.get('cc')
         carrier = self.__choiceCarrier(cc)
@@ -121,15 +136,15 @@ class Extracter():
             f.flush()
         return config_dirpath
 
-    def __extractAxolotlDatabase(self, dirpath: str):
-        self.device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
-        ok = bool(self.__runAsRootOnDevice(f'cp /data/data/{self.package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0'))
+    def __extractAxolotlDatabase(self, device: _AdbWrapper, package: str, dirpath: str):
+        device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
+        ok = bool(int(device.shell_as_root(f'cp /data/data/{package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0')))
         if not ok:
-            raise Exception('extract axolotl.db failure, please report issue')
-        self.__runAsRootOnDevice(f'chown 2000:2000 -R {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
-        filepaths = self.device.shell(f'ls -1 {DEVICE_AXOLOTLDB_EXTRACT_PATH}/*')
+            raise ExportAxolotlException('extract axolotl.db fail, please report issue')
+        device.shell_as_root(f'chown 2000:2000 -R {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
+        filepaths = device.shell(f'ls -1 {DEVICE_AXOLOTLDB_EXTRACT_PATH}/*')
         for filepath in filepaths.splitlines():
-            self.device.pull(filepath, dirpath)
+            device.pull(filepath, dirpath)
 
     def __decryptKeyPair(self, keypair_enc: str):
         array = json.loads(keypair_enc)
@@ -152,12 +167,12 @@ class Extracter():
         # decryptedData += decrypter.feed()
         # return base64.b64encode(decryptedData).decode('utf-8')
 
-    def __decryptKeyPairJavaImpl(self, keypair_enc: str):
+    def __decryptKeyPairJavaImpl(self, device: _AdbWrapper, keypair_enc: str) -> str:
         dirpath = os.path.dirname(os.path.abspath(__file__))
         device_filename = '/data/local/tmp/decrypt.dex'
-        self.device.push(os.path.join(dirpath, 'common', 'decrypt.dex'), device_filename)
+        device.push(os.path.join(dirpath, 'common', 'decrypt.dex'), device_filename)
         keypair_enc = keypair_enc.replace('"', '\\"')
-        return self.device.shell(f'echo {shlex.quote(keypair_enc)} | CLASSPATH={device_filename} app_process /system/bin  com.kaisar.wakeypairtools.Decrypt').strip()
+        return device.shell(f'echo {shlex.quote(keypair_enc)} | CLASSPATH={device_filename} app_process /system/bin  com.kaisar.wakeypairtools.Decrypt').strip()
 
     def __choiceCarrier(self, country_code: str):
         dirpath = os.path.dirname(os.path.abspath(__file__))
@@ -169,23 +184,12 @@ class Extracter():
                     matched_carriers.append(carrier)
             return random.choice(matched_carriers)
 
-    def __parsePrefs(self, device_prefs_file: str) -> Dict[str, str]:
-        xml = self.__runAsRootOnDevice(f'cat {device_prefs_file}')
+    def __parsePrefs(self, device: _AdbWrapper, device_prefs_file: str) -> Dict[str, str]:
+        xml = device.shell_as_root(f'cat {device_prefs_file}')
         logger.debug(f'======{device_prefs_file}======')
         logger.debug('\n' + xml)
         root = ElementTree.fromstring(xml)
         return {child.attrib['name']: child.text for child in root}
-
-    def __runAsRootOnDevice(self, command):
-        if self.su_type == SuType.THIRD:
-            return self.device.shell(f'su 0 -c {command}')
-        elif self.su_type == SuType.AOSP:
-            if int(self.device.shell('id -u')) == 0:
-                return self.device.shell(command)
-            else:
-                return self.device.shell(f'su 0 {command}')
-        else:
-            raise NoRootException('Only support rooted device!')
 
     def __b64padding(self, text: str):
         return text + '=' * (-len(text) % 4)

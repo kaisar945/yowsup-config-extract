@@ -4,21 +4,48 @@ __author__ = "Kaisar Zu"
 
 import argparse
 import logging
+import sys
+import tempfile
 
-from yowsup_config.extracter import Extracter
+from yowsup_config.adb_wrapper import NoRootException
+from yowsup_config.extracter import (AppNotInstalledException,
+                                     ExportAxolotlException,
+                                     ExportConfigException, Extracter)
+
+ERROR_UNKNOWN = 1
+ERROR_NO_ROOT = 11
+ERROR_APP_NOT_INSTALLED = 12
+ERROR_EXPORT_CONFIG = 13
+ERROR_EXPORT_AXOLOTL = 14
+
+logger = logging.getLogger(__name__)
 
 
 def main():
     parser = argparse.ArgumentParser(prog='yowsup-config-extract', description='Extract config from rooted android device for yowsup project.')
     parser.add_argument('-s', '--serial', help='Specific device serial')
     parser.add_argument('-p', '--package', default='com.whatsapp', help='For mod package default:com.whatsapp')
-    parser.add_argument('--out', type=str, required=True, help='Specific save directory')
+    parser.add_argument('-o', '--out', default=tempfile.gettempdir(), help=f'Specific save directory default:{tempfile.gettempdir()}')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug log')
     args = parser.parse_args()
+    ERROR_MAP = {
+        NoRootException.__name__: ERROR_NO_ROOT,
+        AppNotInstalledException.__name__: ERROR_APP_NOT_INSTALLED,
+        ExportConfigException.__name__: ERROR_EXPORT_CONFIG,
+        ExportAxolotlException.__name__: ERROR_EXPORT_AXOLOTL
+    }
     if args.out:
-        extracter = Extracter(args.serial, args.package)
-        extracter.setLogLevel(logging.DEBUG if args.debug else logging.INFO)
-        extracter.extractFromDevice(args.out)
+        try:
+            extracter = Extracter()
+            extracter.setLogLevel(logging.DEBUG if args.debug else logging.INFO)
+            extracter.extractFromDevice(args.serial, args.package, args.out)
+        except Exception as e:
+            logging.error(e)
+            if e.__class__.__name__ in ERROR_MAP:
+                code = ERROR_MAP.get(e.__class__.__name__)
+                sys.exit(code)
+            else:
+                sys.exit(ERROR_UNKNOWN)
     else:
         parser.print_help()
 

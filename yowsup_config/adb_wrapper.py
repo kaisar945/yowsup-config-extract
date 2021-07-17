@@ -3,6 +3,10 @@ import shlex
 import subprocess
 
 
+class NoRootException(Exception):
+    pass
+
+
 class _AdbWrapper():
 
     def __init__(self, serial: str = None):
@@ -26,3 +30,13 @@ class _AdbWrapper():
 
     def push(self, filename, device_filename):
         self.__execute(f'push "{filename}" "{device_filename}"')
+
+    def shell_as_root(self, command):
+        if int(self.shell('id -u')) == 0:
+            return self.shell(command)
+        elif int(self.shell('su 0 -c id -u')) == 0:
+            return self.shell(f'su 0 -c {command}')
+        elif int(self.shell('su 0 id -u')) == 0:
+            return self.shell(f'su 0 {command}')
+        else:
+            raise NoRootException('No have root permission')
