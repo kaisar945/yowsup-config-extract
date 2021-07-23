@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 
 from yowsup_config import logger
 
-from .adb_wrapper import NoRootException, AdbWrapper
+from .adb_wrapper import AdbWrapper, NoRootException
 
 DEVICE_AXOLOTLDB_EXTRACT_PATH = '/data/local/tmp/axolotl/'
 SOMETOKEN = 'A\u0004\u001d@\u0011\u0018V\u0002T(3{;ES'
@@ -188,6 +188,9 @@ class Extracter():
         xml = device.shell_as_root(f'cat {device_prefs_file}')
         logger.debug(f'======{device_prefs_file}======')
         logger.debug('\n' + xml)
+        return self.parseXml(xml)
+
+    def parseXml(self, xml) -> Dict[str, str]:
         root = ElementTree.fromstring(xml)
         return {child.attrib['name']: child.text for child in root}
 
