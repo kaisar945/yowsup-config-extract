@@ -11,8 +11,7 @@ from xml.etree import ElementTree
 
 from yowsupx.config import (AppNotInstalledException, ExportAxolotlException,
                             KeyPairInvalideException, NoRootException)
-
-from .adb_wrapper import AdbWrapper
+from yowsupx.config.adbwrapper import AdbWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ def extractFromDevice(serial=None, package: str = 'com.whatsapp', dirpath: str =
     """
     Extract the yowsup configuration file from the rooted device
     """
-    device = AdbWrapper(serial)
+    device = AdbWrapper.connect(serial)
     # check root supported
     logger.info('check root permission')
     try:

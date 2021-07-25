@@ -5,13 +5,11 @@ import subprocess
 from yowsupx.config import NoRootException
 
 
-class AdbWrapper():
+class Device(object):
 
-    def __init__(self, serial: str = None):
+    def __init__(self, serial: str, cmdopts: str):
         self.serial = serial
-        self.cmdopts = f'-s {serial}' if serial else ''
-        if os.system(f'adb {self.cmdopts} shell exec') != 0:
-            raise Exception('Install adb in the system env PATH first')
+        self.cmdopts = cmdopts
 
     def __execute(self, subcmd):
         command = f'adb {self.cmdopts} {subcmd}'
@@ -38,3 +36,16 @@ class AdbWrapper():
             return self.shell(f'su 0 {command}')
         else:
             raise NoRootException('No have root permission')
+
+
+class AdbWrapper():
+
+    def connect(serial: str = None) -> Device:
+        cmdopts = f'-s {serial}' if serial else ''
+        status = os.system(f'adb {cmdopts} shell exec')
+        if status == 0:
+            return Device(serial, cmdopts)
+        elif status == 127:
+            raise Exception('Install adb in the system env PATH first')
+        else:
+            raise Exception('Whether to connect multiple devices?')
