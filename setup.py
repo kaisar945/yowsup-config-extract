@@ -3,13 +3,13 @@ from __future__ import print_function
 
 from setuptools import find_packages, setup
 
-import yowsup
+import yowsupx
 
 deps = ['argparse']
 
 setup(
     name='yowsup-config-extracter',
-    version=yowsup.__version__,
+    version=yowsupx.__version__,
     url='http://github.com/kaisar945/yowsup-config-extracter/',
     license='GPL-3+',
     author='Kaisar Zu',
