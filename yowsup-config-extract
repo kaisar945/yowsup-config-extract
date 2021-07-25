@@ -4,13 +4,11 @@ __author__ = "Kaisar Zu"
 
 import argparse
 import logging
+import os
 import sys
-import tempfile
 
-from yowsup_config.adb_wrapper import NoRootException
-from yowsup_config.extracter import (AppNotInstalledException,
-                                     ExportAxolotlException,
-                                     ExportConfigException, Extracter)
+from yowsupx.config import (AppNotInstalledException, ExportAxolotlException,
+                            ExportConfigException, NoRootException, extracter)
 
 ERROR_UNKNOWN = 1
 ERROR_NO_ROOT = 11
@@ -25,7 +23,7 @@ def main():
     parser = argparse.ArgumentParser(prog='yowsup-config-extract', description='Extract config from rooted android device for yowsup project.')
     parser.add_argument('-s', '--serial', help='Specific device serial')
     parser.add_argument('-p', '--package', default='com.whatsapp', help='For mod package default:com.whatsapp')
-    parser.add_argument('-o', '--out', default=tempfile.gettempdir(), help=f'Specific save directory default:{tempfile.gettempdir()}')
+    parser.add_argument('-o', '--out', default=os.getcwd(), help=f'Specific save directory default:{os.getcwd()}')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug log')
     args = parser.parse_args()
     ERROR_MAP = {
@@ -36,7 +34,6 @@ def main():
     }
     if args.out:
         try:
-            extracter = Extracter()
             extracter.setLogLevel(logging.DEBUG if args.debug else logging.INFO)
             extracter.extractFromDevice(args.serial, args.package, args.out)
         except Exception as e:

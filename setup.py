@@ -3,13 +3,13 @@ from __future__ import print_function
 
 from setuptools import find_packages, setup
 
-import yowsup_config
+import yowsup
 
 deps = ['argparse']
 
 setup(
     name='yowsup-config-extracter',
-    version=yowsup_config.__version__,
+    version=yowsup.__version__,
     url='http://github.com/kaisar945/yowsup-config-extracter/',
     license='GPL-3+',
     author='Kaisar Zu',
@@ -17,12 +17,12 @@ setup(
     install_requires=deps,
     scripts=['yowsup-config-extract'],
     # cmdclass={'test': PyTest},
-    author_email='jiankaihu.jrsen@gmail.com',
+    author_email='jiankaizhu.jrsen@gmail.com',
     description='The WhatsApp config extract tool lib',
     # long_description=long_description,
     packages=find_packages(),
     include_package_data=True,
-    data_files=[('yowsup_config/common', ['yowsup_config/common/mcc-mnc-table.json', 'yowsup_config/common/decrypt.dex'])],
+    data_files=[('yowsupx/config/common', ['yowsupx/config/common/mcc-mnc-table.json', 'yowsupx/config/common/decrypt.dex'])],
     platforms='any',
     # test_suite='',
     classifiers=[

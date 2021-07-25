@@ -2,9 +2,7 @@ import os
 import shlex
 import subprocess
 
-
-class NoRootException(Exception):
-    pass
+from yowsupx.config import NoRootException
 
 
 class AdbWrapper():
