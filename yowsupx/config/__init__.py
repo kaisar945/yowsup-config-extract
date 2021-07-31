@@ -10,9 +10,5 @@ class KeyPairInvalideException(ExportConfigException):
     pass
 
 
-class ExportAxolotlException(Exception):
-    pass
-
-
 class NoRootException(Exception):
     pass

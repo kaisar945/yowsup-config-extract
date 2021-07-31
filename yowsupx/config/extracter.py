@@ -5,12 +5,12 @@ import os
 import random
 import shlex
 import shutil
-from hashlib import pbkdf2_hmac
+# from hashlib import pbkdf2_hmac
 from typing import Dict
 from xml.etree import ElementTree
 
-from yowsupx.config import (AppNotInstalledException, ExportAxolotlException,
-                            KeyPairInvalideException, NoRootException)
+from yowsupx.config import (AppNotInstalledException, KeyPairInvalideException,
+                            NoRootException)
 from yowsupx.config.adbwrapper import AdbWrapper
 
 logger = logging.getLogger(__name__)
@@ -23,12 +23,12 @@ def setLogLevel(level):
     logger.setLevel(level)
 
 
-def extractFromDevice(serial=None, package: str = 'com.whatsapp', dirpath: str = os.getcwd()) -> str:
+def fromDevice(serial: str = None, package: str = 'com.whatsapp', outdir: str = os.getcwd()) -> str:
     """
-    Extract the yowsup configuration file from the rooted device
+    Extract the yowsup configuration file from the rooted device.
     """
     device = AdbWrapper.connect(serial)
-    # check root supported
+    # check device root support
     logger.info('check root permission')
     try:
         rooted = device.shell_as_root('printf rooted')
@@ -43,61 +43,86 @@ def extractFromDevice(serial=None, package: str = 'com.whatsapp', dirpath: str =
         logger.info('not installed')
         raise AppNotInstalledException(f'{package} not installed')
     logger.info(f'{package} installed')
-    # extract prefs file
     logger.info('extract config file')
-    config_filepath = extractConfig(device, package, dirpath)
-    logger.info('done')
-    # extract db file
-    logger.info('extract axolotl db file')
-    profile_dirpath = os.path.dirname(config_filepath)
-    extractAxolotlDatabase(device, package, profile_dirpath)
-    logger.info('done')
-    logger.info(f'save to {profile_dirpath}')
-    logger.info('Finish')
-    return profile_dirpath
-
-
-def extractConfig(device: AdbWrapper, package: str, dirpath: str):
     # parse keystore.xml
     keystore_filepath = f'/data/data/{package}/shared_prefs/keystore.xml'
     file_exists = bool(int(device.shell_as_root(f'[[ -f {keystore_filepath} ]] && printf 1 || printf 0')))
     if not file_exists:
         logger.info(f'{keystore_filepath} miss')
         raise FileNotFoundError(f'not found {keystore_filepath} on device')
-    keystore = parsePrefs(device, keystore_filepath)
+    keystore = loadPrefsFromDevice(device, keystore_filepath)
+
+    # parse {package}_preferences_light.xml
+    prefs_light_filepath = f'/data/data/{package}/shared_prefs/{package}_preferences_light.xml'
+    file_exists = bool(int(device.shell_as_root(f'[[ -f {prefs_light_filepath} ]] && printf 1 || printf 0 ')))
+    if not file_exists:
+        logger.info(f'{prefs_light_filepath} miss')
+        raise FileNotFoundError(f'not found {prefs_light_filepath} on device')
+    prefs_light = loadPrefsFromDevice(device, prefs_light_filepath)
+
+    # extract config file
+    config_filepath = extractConfig(keystore, prefs_light, device, outdir)
+    logger.info(f'save to {config_filepath}')
+    logger.info('Finish')
+    return config_filepath
+
+
+def fromDirectory(datadir: str, serial: str = None, package: str = 'com.whatsapp', outdir: str = os.getcwd()) -> str:
+    """
+    Extract the yowsup configuration file from the directory.
+    """
+    device = AdbWrapper.connect(serial)
+    # extract prefs file
+    logger.info('extract config file')
+    keystore_filename = 'keystore.xml'
+    keystore_filepath = __find_file(keystore_filename, datadir)
+    if not keystore_filepath:
+        logger.info(f'{keystore_filename} miss')
+        raise FileNotFoundError(f'not found {keystore_filename} on {datadir}')
+    keystore = loadPrefsFromDirectory(keystore_filepath)
+
+    # parse {package}_preferences_light.xml
+    prefs_light_filename = f'{package}_preferences_light.xml'
+    prefs_light_filepath = __find_file(prefs_light_filename, datadir)
+    if not prefs_light_filepath:
+        logger.info(f'{prefs_light_filename} miss')
+        raise FileNotFoundError(f'not found {prefs_light_filename} on {datadir}')
+    prefs_light = loadPrefsFromDirectory(prefs_light_filepath)
+
+    # extract config file
+    config_filepath = extractConfig(keystore, prefs_light, device, outdir)
+    logger.info(f'save to {config_filepath}')
+    logger.info('Finish')
+    return config_filepath
+
+
+def extractConfig(keystore: Dict[str, str], prefs_light: Dict[str, str], device: AdbWrapper, outdir: str):
     client_static_keypair = keystore.get('client_static_keypair', '')
     if not client_static_keypair:
         client_static_keypair_encrypted = keystore.get('client_static_keypair_pwd_enc', '')
         if not client_static_keypair_encrypted:
             logger.info('client_static_keypair miss')
-            raise KeyPairInvalideException(f'client_static_keypair not found in {keystore_filepath}')
+            raise KeyPairInvalideException('client_static_keypair not found')
         client_static_keypair = decryptKeyPair(device, client_static_keypair_encrypted)
     logger.debug('client_static_keypair=' + client_static_keypair)
 
     server_static_public = keystore.get('server_static_public', '')
     if not server_static_public:
         logger.info('server_static_public miss')
-        raise KeyPairInvalideException(f'server_static_public not found in {keystore_filepath}')
+        raise KeyPairInvalideException('server_static_public not found')
     server_static_public = b64padding(server_static_public)
     logger.debug('server_static_public=' + server_static_public)
 
-    # parse com.whatsapp_preferences_light.xml
-    prefs_light_filepath = f'/data/data/{package}/shared_prefs/{package}_preferences_light.xml'
-    file_exists = bool(int(device.shell_as_root(f'[[ -f {prefs_light_filepath} ]] && printf 1 || printf 0 ')))
-    if not file_exists:
-        logger.info(f'{prefs_light_filepath} miss')
-        raise FileNotFoundError(f'not found {prefs_light_filepath} on device')
-    prefs = parsePrefs(device, prefs_light_filepath)
-    phone = prefs.get('registration_jid')
-    cc = prefs.get('cc')
+    phone = prefs_light.get('registration_jid')
+    cc = prefs_light.get('cc')
     carrier = choiceCarrier(cc)
     mcc = carrier['mcc']
     mnc = carrier['mnc']
     sim_mcc = carrier['mcc']
     sim_mnc = carrier['mnc']
-    edge_routing_info = b64padding(prefs.get('routing_info'))
-    expid = prefs.get('phoneid_id')
-    fdid = prefs.get('perf_device_id')
+    edge_routing_info = b64padding(prefs_light.get('routing_info'))
+    expid = prefs_light.get('phoneid_id')
+    fdid = prefs_light.get('perf_device_id')
     id = base64.b64encode(fdid[0:20].encode('utf-8')).decode('utf-8')
 
     config = {
@@ -117,7 +142,7 @@ def extractConfig(device: AdbWrapper, package: str, dirpath: str):
     }
     logger.debug("======config.json======")
     logger.debug('\n' + json.dumps(config, indent=4))
-    config_dirpath = os.path.join(dirpath, phone)
+    config_dirpath = os.path.join(outdir, phone)
     shutil.rmtree(config_dirpath, ignore_errors=True)
     os.makedirs(config_dirpath, exist_ok=False)
     filepath = os.path.join(config_dirpath, 'config.json')
@@ -127,15 +152,10 @@ def extractConfig(device: AdbWrapper, package: str, dirpath: str):
     return filepath
 
 
-def extractAxolotlDatabase(device: AdbWrapper, package: str, dirpath: str):
-    device.shell(f'rm -rf {DEVICE_AXOLOTLDB_EXTRACT_PATH}; mkdir {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
-    ok = bool(int(device.shell_as_root(f'cp /data/data/{package}/databases/axolotl.db* {DEVICE_AXOLOTLDB_EXTRACT_PATH} &>/dev/null && printf 1 || printf 0')))
-    if not ok:
-        raise ExportAxolotlException('extract axolotl.db fail, please report issue')
-    device.shell_as_root(f'chown 2000:2000 -R {DEVICE_AXOLOTLDB_EXTRACT_PATH}')
-    filepaths = device.shell(f'ls -1 {DEVICE_AXOLOTLDB_EXTRACT_PATH}/*')
-    for filepath in filepaths.splitlines():
-        device.pull(filepath, dirpath)
+def __find_file(name, path):
+    for root, dirs, files in os.walk(path):
+        if name in files:
+            return os.path.join(root, name)
 
 # def decryptKeyPair(self, keypair_enc: str):
 #     array = json.loads(keypair_enc)
@@ -178,14 +198,22 @@ def choiceCarrier(country_code: str):
         return random.choice(matched_carriers)
 
 
-def parsePrefs(device: AdbWrapper, device_prefs_file: str) -> Dict[str, str]:
+def loadPrefsFromDevice(device: AdbWrapper, device_prefs_file: str) -> Dict[str, str]:
     xml = device.shell_as_root(f'cat {device_prefs_file}')
     logger.debug(f'======{device_prefs_file}======')
     logger.debug('\n' + xml)
-    return parseXml(xml)
+    return parsePrefs(xml)
 
 
-def parseXml(xml) -> Dict[str, str]:
+def loadPrefsFromDirectory(prefs_filepath: str) -> Dict[str, str]:
+    logger.debug(f'======{prefs_filepath}======')
+    with open(prefs_filepath, 'r') as f:
+        xml = f.read()
+        logger.debug('\n' + xml)
+        return parsePrefs(xml)
+
+
+def parsePrefs(xml) -> Dict[str, str]:
     root = ElementTree.fromstring(xml)
     return {child.attrib['name']: child.text for child in root}
 
