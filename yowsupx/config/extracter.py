@@ -114,31 +114,31 @@ def extractConfig(keystore: Dict[str, str], prefs_light: Dict[str, str], device:
     logger.debug('server_static_public=' + server_static_public)
 
     phone = prefs_light.get('registration_jid')
-    cc = prefs_light.get('cc')
-    carrier = choiceCarrier(cc)
-    mcc = carrier['mcc']
-    mnc = carrier['mnc']
-    sim_mcc = carrier['mcc']
-    sim_mnc = carrier['mnc']
-    edge_routing_info = b64padding(prefs_light.get('routing_info'))
-    expid = prefs_light.get('phoneid_id')
-    fdid = prefs_light.get('perf_device_id')
-    id = base64.b64encode(fdid[0:20].encode('utf-8')).decode('utf-8')
+    # cc = prefs_light.get('cc')
+    # carrier = choiceCarrier(cc)
+    # mcc = carrier['mcc']
+    # mnc = carrier['mnc']
+    # sim_mcc = carrier['mcc']
+    # sim_mnc = carrier['mnc']
+    # edge_routing_info = b64padding(prefs_light.get('routing_info'))
+    # expid = prefs_light.get('phoneid_id')
+    # fdid = prefs_light.get('perf_device_id')
+    # id = base64.b64encode(fdid[0:20].encode('utf-8')).decode('utf-8')
 
     config = {
         '__version__': 1,
-        'cc': cc,
+        # 'cc': cc,
         'client_static_keypair': client_static_keypair,
-        'edge_routing_info': edge_routing_info,
-        'expid': expid,
-        'fdid': fdid,
-        'id': id,
-        'mcc': mcc,
-        'mnc': mnc,
+        # 'edge_routing_info': edge_routing_info,
+        # 'expid': expid,
+        # 'fdid': fdid,
+        # 'id': id,
+        # 'mcc': mcc,
+        # 'mnc': mnc,
         'phone': phone,
         'server_static_public': server_static_public,
-        'sim_mcc': sim_mcc,
-        'sim_mnc': sim_mnc
+        # 'sim_mcc': sim_mcc,
+        # 'sim_mnc': sim_mnc
     }
     logger.debug("======config.json======")
     logger.debug('\n' + json.dumps(config, indent=4))
