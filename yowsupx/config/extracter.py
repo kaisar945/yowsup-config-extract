@@ -8,7 +8,6 @@ from hashlib import pbkdf2_hmac
 from typing import Dict
 from xml.etree import ElementTree
 
-from Crypto import Cipher
 from Crypto.Cipher import AES
 from yowsupx.config import (AppNotInstalledException, KeyPairInvalideException,
                             NoRootException)
