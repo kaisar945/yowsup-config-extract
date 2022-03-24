@@ -6,9 +6,9 @@ This is the [yowsup](https://github.com/tgalal/yowsup) configuration extractor, 
 ## Build & Install
 
 You should install [adb](https://developer.android.com/studio/releases/platform-tools) first in your system environment then follow the steps below.
-```
-$ git clone https://github.com/kaisar945/yowsup-config-extract.git ~/$ yowsup-config-extract
-$ cd ~/yowsup-config-extract
+```shell
+$ git clone https://github.com/kaisar945/yowsup-config-extract.git
+$ cd yowsup-config-extract
 $ python3 setup.py sdist
 $ pip3 install dist/yowsup-config-extracter-x.x.x.tar.gz
 ```
@@ -16,34 +16,36 @@ $ pip3 install dist/yowsup-config-extracter-x.x.x.tar.gz
 ## How to use?
 
 1. Extract from rooted android device
-    ```
-    yowsup-config-extract -s {device-serial} -o {out-dir}
+    ```shell
+    yowsup-config-extract -s {android-device-serial} -fmt {conf|hash}
     ```
 
 2. Extract from local directory
-    ```
-    yowsup-config-extract -D {local-directory} -o {out-dir}
+    ```shell
+    yowsup-config-extract -d {local-directory} -fmt {conf|hash}
     ```
 
 3. See the ```--help``` option for other usage.
     ```
-    usage: yowsup-config-extract [-h] [-s SERIAL] [-D DATADIR] [-p PACKAGE]
-                             [-o OUT] [-d]
-
-    Extract config from rooted android device for yowsup project.
-
+    usage: yowsup-config-extract [-h] [-s SERIAL] [-d DATADIR] [-p PACKAGE] [-fmt {conf,hash}] [-D]
+    
+    Extract config file for yowsup project.
+    
     optional arguments:
-    -h, --help            show this help message and exit
-    -p PACKAGE, --package PACKAGE
-                            for mod package default:com.whatsapp
-    -o OUT, --out OUT     specific save directory
-    -d, --debug           show debug log
-
+      -h, --help            show this help message and exit
+      -p PACKAGE, --package PACKAGE
+                            for mod package, default:com.whatsapp
+    
     Extracter options:
-    -s SERIAL, --serial SERIAL
-                            extract from specific device
-    -D DATADIR, --datadir DATADIR
+      -s SERIAL, --serial SERIAL
+                            extract from specific android device
+      -d DATADIR, --datadir DATADIR
                             extract from specific local directory
+    
+    Output options:
+      -fmt {conf,hash}, --output-format {conf,hash}
+                            output format
+      -D, --debug           show debug log
     ```
 
 ## Notice
