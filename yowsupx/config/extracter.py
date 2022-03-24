@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import shutil
+from enum import Enum
 from hashlib import pbkdf2_hmac
 from typing import Dict
 from xml.etree import ElementTree
@@ -19,36 +20,52 @@ DEVICE_AXOLOTLDB_EXTRACT_PATH = '/data/local/tmp/axolotl/'
 SOMETOKEN = 'A\u0004\u001d@\u0011\u0018V\u0002T(3{;ES'
 
 
+class OutputFormat(Enum):
+
+    conf = 1
+    hash = 2
+
+    @classmethod
+    def argtype(cls, s: str):
+        try:
+            return cls[s]
+        except KeyError:
+            raise KeyError(f"{s!r} is not a valid {cls.__name__}")
+
+    def __str__(self):
+        return self.name
+
+
 def setLogLevel(level):
     logger.setLevel(level)
 
 
-def fromDevice(serial: str = None, package: str = 'com.whatsapp', outdir: str = os.getcwd()) -> str:
+def fromDevice(serial: str = None, package: str = 'com.whatsapp', format=OutputFormat.conf) -> str:
     """
     Extract the yowsup configuration file from the rooted device.
     """
     device = AdbWrapper.connect(serial)
     # check device root support
-    logger.info('check root permission')
+    logger.debug('check root permission')
     try:
         rooted = device.shell_as_root('printf rooted')
     except NoRootException as e:
-        logger.info('no root')
+        logger.debug('no root')
         raise e
-    logger.info(rooted)
+    logger.debug(rooted)
     # check package installed
-    logger.info('check app installed')
+    logger.debug('check app installed')
     app_installed = bool(int(device.shell(f'pm path {package} &>/dev/null && printf 1 || printf 0')))
     if not app_installed:
-        logger.info('not installed')
+        logger.debug('not installed')
         raise AppNotInstalledException(f'{package} not installed')
-    logger.info(f'{package} installed')
-    logger.info('extract config file')
+    logger.debug(f'{package} installed')
+    logger.debug('extract config file')
     # parse keystore.xml
     keystore_filepath = f'/data/data/{package}/shared_prefs/keystore.xml'
     file_exists = bool(int(device.shell_as_root(f'[[ -f {keystore_filepath} ]] && printf 1 || printf 0')))
     if not file_exists:
-        logger.info(f'{keystore_filepath} miss')
+        logger.debug(f'{keystore_filepath} miss')
         raise FileNotFoundError(f'not found {keystore_filepath} on device')
     keystore = loadPrefsFromDevice(device, keystore_filepath)
 
@@ -56,27 +73,28 @@ def fromDevice(serial: str = None, package: str = 'com.whatsapp', outdir: str = 
     prefs_light_filepath = f'/data/data/{package}/shared_prefs/{package}_preferences_light.xml'
     file_exists = bool(int(device.shell_as_root(f'[[ -f {prefs_light_filepath} ]] && printf 1 || printf 0 ')))
     if not file_exists:
-        logger.info(f'{prefs_light_filepath} miss')
+        logger.debug(f'{prefs_light_filepath} miss')
         raise FileNotFoundError(f'not found {prefs_light_filepath} on device')
     prefs_light = loadPrefsFromDevice(device, prefs_light_filepath)
 
-    # extract config file
-    config_filepath = extractConfig(keystore, prefs_light, outdir)
-    logger.info(f'save to {config_filepath}')
-    logger.info('Finish')
-    return config_filepath
+    if format == OutputFormat.conf:
+        # extract config file
+        return extractConfig(keystore, prefs_light)
+    elif format == OutputFormat.hash:
+        # extract hash file
+        return extractHash(keystore, prefs_light)
 
 
-def fromDirectory(datadir: str, serial: str = None, package: str = 'com.whatsapp', outdir: str = os.getcwd()) -> str:
+def fromDirectory(datadir: str, package: str = 'com.whatsapp', format=OutputFormat.conf) -> str:
     """
     Extract the yowsup configuration file from the directory.
     """
     # extract prefs file
-    logger.info('extract config file')
+    logger.debug('extract config file')
     keystore_filename = 'keystore.xml'
     keystore_filepath = __find_file(keystore_filename, datadir)
     if not keystore_filepath:
-        logger.info(f'{keystore_filename} miss')
+        logger.debug(f'{keystore_filename} miss')
         raise FileNotFoundError(f'not found {keystore_filename} on {datadir}')
     keystore = loadPrefsFromDirectory(keystore_filepath)
 
@@ -84,30 +102,31 @@ def fromDirectory(datadir: str, serial: str = None, package: str = 'com.whatsapp
     prefs_light_filename = f'{package}_preferences_light.xml'
     prefs_light_filepath = __find_file(prefs_light_filename, datadir)
     if not prefs_light_filepath:
-        logger.info(f'{prefs_light_filename} miss')
+        logger.debug(f'{prefs_light_filename} miss')
         raise FileNotFoundError(f'not found {prefs_light_filename} on {datadir}')
     prefs_light = loadPrefsFromDirectory(prefs_light_filepath)
 
-    # extract config file
-    config_filepath = extractConfig(keystore, prefs_light, outdir)
-    logger.info(f'save to {config_filepath}')
-    logger.info('Finish')
-    return config_filepath
+    if format == OutputFormat.conf:
+        # extract config file
+        return extractConfig(keystore, prefs_light)
+    elif format == OutputFormat.hash:
+        # extract hash file
+        return extractHash(keystore, prefs_light)
 
 
-def extractConfig(keystore: Dict[str, str], prefs_light: Dict[str, str], outdir: str):
+def extractConfig(keystore: Dict[str, str], prefs_light: Dict[str, str]):
     client_static_keypair = keystore.get('client_static_keypair', '')
     if not client_static_keypair:
         client_static_keypair_encrypted = keystore.get('client_static_keypair_pwd_enc', '')
         if not client_static_keypair_encrypted:
-            logger.info('client_static_keypair miss')
+            logger.debug('client_static_keypair miss')
             raise KeyPairInvalideException('client_static_keypair not found')
         client_static_keypair = decryptKeyPair(client_static_keypair_encrypted)
     logger.debug('client_static_keypair=' + client_static_keypair)
 
     server_static_public = keystore.get('server_static_public', '')
     if not server_static_public:
-        logger.info('server_static_public miss')
+        logger.debug('server_static_public miss')
         raise KeyPairInvalideException('server_static_public not found')
     server_static_public = b64padding(server_static_public)
     logger.debug('server_static_public=' + server_static_public)
@@ -139,16 +158,25 @@ def extractConfig(keystore: Dict[str, str], prefs_light: Dict[str, str], outdir:
         # 'sim_mcc': sim_mcc,
         # 'sim_mnc': sim_mnc
     }
-    logger.debug("======config.json======")
-    logger.debug('\n' + json.dumps(config, indent=4))
-    config_dirpath = os.path.join(outdir, phone)
-    shutil.rmtree(config_dirpath, ignore_errors=True)
-    os.makedirs(config_dirpath, exist_ok=False)
-    filepath = os.path.join(config_dirpath, 'config.json')
-    with open(filepath, 'w') as f:
-        f.write(json.dumps(config, indent=4))
-        f.flush()
-    return filepath
+    return json.dumps(config, indent=4)
+
+
+def extractHash(keystore: Dict[str, str], prefs_light: Dict[str, str]):
+    client_static_keypair = keystore.get('client_static_keypair', '')
+    if not client_static_keypair:
+        client_static_keypair_encrypted = keystore.get('client_static_keypair_pwd_enc', '')
+        if not client_static_keypair_encrypted:
+            logger.debug('client_static_keypair miss')
+            raise KeyPairInvalideException('client_static_keypair not found')
+        client_static_keypair = decryptKeyPair(client_static_keypair_encrypted)
+    logger.debug('client_static_keypair=' + client_static_keypair)
+
+    phone = prefs_light.get('registration_jid')
+    plain_bytes = base64.b64decode(client_static_keypair)
+    half_size = int(len(plain_bytes) / 2)
+    key1 = base64.b64encode(plain_bytes[half_size:]).decode(encoding='utf-8')  # with + / =
+    key2 = base64.b64encode(plain_bytes[:half_size]).decode(encoding='utf-8')  # with + / =
+    return f"{phone},{key1},{key2}"
 
 
 def __find_file(name, path):

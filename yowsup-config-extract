@@ -4,11 +4,11 @@ __author__ = "Kaisar Zu"
 
 import argparse
 import logging
-import os
 import sys
 
 from yowsupx.config import (AppNotInstalledException, ExportConfigException,
                             NoRootException, extracter)
+from yowsupx.config.extracter import OutputFormat
 
 ERROR_UNKNOWN = 1
 ERROR_NO_ROOT = 11
@@ -19,13 +19,16 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='yowsup-config-extract', description='Extract config from rooted android device for yowsup project.')
-    options = parser.add_argument_group("Extracter options")
-    options.add_argument('-s', '--serial', help='extract from specific device')
-    options.add_argument('-D', '--datadir', help='extract from specific local directory')
-    parser.add_argument('-p', '--package', default='com.whatsapp', help='for mod package default:com.whatsapp')
-    parser.add_argument('-o', '--out', default=os.getcwd(), help='specific save directory')
-    parser.add_argument('-d', '--debug', action="store_true", help='show debug log')
+    parser = argparse.ArgumentParser(prog='yowsup-config-extract', description='Extract config file for yowsup project.')
+    extracter_options = parser.add_argument_group("Extracter options")
+    extracter_options.add_argument('-s', '--serial', help='extract from specific android device')
+    extracter_options.add_argument('-d', '--datadir', help='extract from specific local directory')
+    parser.add_argument('-p', '--package', default='com.whatsapp', help='for mod package, default:com.whatsapp')
+
+    out_options = parser.add_argument_group("Output options")
+    out_options.add_argument('-fmt', '--output-format', type=OutputFormat.argtype, default=OutputFormat.conf, choices=OutputFormat,  help='output format')
+
+    out_options.add_argument('-D', '--debug', action="store_true", help='show debug log')
     args = parser.parse_args()
     ERROR_MAP = {
         NoRootException.__name__: ERROR_NO_ROOT,
@@ -35,9 +38,10 @@ def main():
     try:
         extracter.setLogLevel(logging.DEBUG if args.debug else logging.INFO)
         if args.datadir:
-            extracter.fromDirectory(args.datadir, args.serial, args.package, args.out)
+            config = extracter.fromDirectory(args.datadir, args.package, args.output_format)
         else:
-            extracter.fromDevice(args.serial, args.package, args.out)
+            config = extracter.fromDevice(args.serial, args.package, args.output_format)
+        print(config)
     except Exception as e:
         logging.error(e)
         if e.__class__.__name__ in ERROR_MAP:
